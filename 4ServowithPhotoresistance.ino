@@ -1,57 +1,47 @@
-#include <Servo.h>
+/*
+  LiquidCrystal Library - Hello World
+ This sketch prints "Hello World!" to the LCD
+ and shows the time.
+*/
 
-Servo myservo1; 
-Servo myservo2;
-Servo myservo3;
-Servo myservo4;
+// include the library code:
+#include <LiquidCrystal.h>
 
-int potpin1 = 0; //将A0作为servo1的控制信号输入端口
-int potpin2 = 1;
-int potpin3 = 2;
-int potpin4 = 3;
-int val1; //控制信号输入
-int val2; 
-int val3; 
-int val4; 
+// initialize the library by associating any needed LCD interface pin
+// with the arduino pin number it is connected to
+const int rs = 12, en = 11, d4 = 5, d5 = 4, d6 = 3, d7 = 2;
+LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
 
-void setup()
-{
-myservo1.attach(6); //将pin6作为servo1的PWM波输出端口
-myservo2.attach(9);
-myservo3.attach(10);
-myservo4.attach(11);
-Serial.begin(9600);
+void setup() {
+  // set up the LCD's number of columns and rows:
+  lcd.begin(16, 2);
+  // Print a message to the LCD.
+  lcd.print("hello, world!");
+  //detect input port A0
+  pinMode(A0,INPUT);
 }
+
 void loop() {
-{ 
-
-carDetect();
-servoRotate();
-delay(5); 
-} 
+  // set the cursor to column 0, line 1
+  // (note: line 1 is the second row, since counting begins with 0):
+  LCDhowmuchspace();
+  lcd.setCursor(0, 1);
+  // print the number of seconds since reset:
+  lcd.print(millis() / 1000);
 }
 
-void carDetect(){
-  int compare = 300;//光敏电阻接负极，10K接正极，白天未遮光val约等于60，遮光约等于300-500
-  val1 = analogRead(potpin1); //测量A0输入
-  val1 = (val1>compare)? 90 : 0 ;//若val1大于compare，说明有车遮挡电阻，旋转开启大门至九十度，反之保持在零度angle: the value to write to the servo, from 0 to 180
-  val2 = analogRead(potpin2); 
-  val2 = (val2>compare)? 90 : 0 ;
-  val3 = analogRead(potpin3); 
-  val3 = (val3>compare)? 90 : 0 ;
-  val4 = analogRead(potpin4); 
-  val4 = (val4>compare)? 90 : 0 ;
+void LCDhowmuchspace(){
+  int val1 = 0;
+  val1 = analogRead(A0);
+  val1 = (val1>300)? 90 : 0 ;
+  if(val1 == 90){
+    lcd.setCursor(0, 0);
+    lcd.print("four spare room");
+  }
+  else{
+    lcd.setCursor(0, 0);
+    lcd.print("Hello world     ");//use space to overwrite the previous words
+  }
+    
 }
-
-void servoRotate(){
-  myservo1.write(val1); 
-  Serial.println(val1);
   
-  myservo2.write(val2); 
-  
-  myservo3.write(val3); 
-  
-  myservo4.write(val4); 
-
-}
-
