@@ -1,9 +1,7 @@
 /*
   LiquidCrystal Library - Hello World
-
  This sketch prints "Hello World!" to the LCD
  and shows the time.
-
 */
 
 // include the library code:
@@ -42,9 +40,8 @@ void LCDhowmuchspace(){
   }
   else{
     lcd.setCursor(0, 0);
-    lcd.print("Hello world");
+    lcd.print("Hello world     ");//use space to overwrite the previous words
   }
     
 }
-  
   
