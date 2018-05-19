@@ -19,7 +19,7 @@ int gateclose = 0;//关门角度
 
 int Gatecar = 0;//读取A0的值，判断大门前是否有车，1为有0为无
 int state[] = {1,0,0};//三个停车位的状态矩阵，1为有车，0为无车
-int compare = 350;//A0A1等端口的输入值将于此值比较，建议为500，但根据光照强度不同该值可能需要改变
+int compare = 300;//A0A1等端口的输入值将于此值比较，建议为500，但根据光照强度不同该值可能需要改变
 
 /* UART FSM States */
 typedef enum
@@ -56,13 +56,18 @@ void setup() {
   myservo2.attach(7);
   myservo3.attach(8);
   myservo4.attach(9);
+    lcd.begin(16, 2);
+  // Print a message to the LCD.
+  lcd.print("hello, world!");
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
   carDetect();
+  delay(50);//这个delay很重要
   carpark_state_machine();
   servoRotate();
+  LCDdebug();
 }
 void carDetect(){
   Gatecar = analogRead(A0);
@@ -113,7 +118,6 @@ void carpark_state_machine()
   switch(txState)
   {
     case IDLE:
-    delay(1000);
       timelimit1 =0 ;
       timelimit2 =0 ;
       timelimit3 =0 ;
@@ -216,8 +220,25 @@ void carpark_state_machine()
 
 void servoRotate(){
   myservo1.write(angle[0]); 
-  Serial.println(angle[0]);
   myservo2.write(angle[1]); 
   myservo3.write(angle[2]); 
   myservo4.write(angle[3]); 
+}
+
+unsigned previousMillis = 0;
+
+void LCDdebug(){
+  unsigned long currentMillis = millis();  
+  if (currentMillis - previousMillis > 1000) {
+    previousMillis = currentMillis;
+    lcd.clear();
+    lcd.setCursor(0, 1);
+    lcd.print(analogRead(A0));//use space to overwrite the previous words
+    lcd.setCursor(4, 1);
+    lcd.print(analogRead(A1));
+    lcd.setCursor(8, 1);
+    lcd.print(analogRead(A2));
+    lcd.setCursor(12, 1);
+    lcd.print(analogRead(A3));
+  }
 }
