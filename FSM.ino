@@ -1,7 +1,25 @@
-int newcar = 0;//判断大门前是否有车，1为有0为无
-int newcar2 = 0;//判断A1前是否有车，1为有0为无
-int state[] = {1,0,0};
+// include the library code:
+#include <LiquidCrystal.h>
+#include <Servo.h>
 
+// initialize the library by associating any needed LCD interface pin
+// with the arduino pin number it is connected to
+const int rs = 12, en = 11, d4 = 5, d5 = 4, d6 = 3, d7 = 2;
+LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
+
+//for four servos
+Servo myservo1; 
+Servo myservo2;
+Servo myservo3;
+Servo myservo4;
+
+int angle[]={0,0,0,0}; //舵机旋转角度
+int gateopen = 90;//开门角度
+int gateclose = 0;//关门角度
+
+int Gatecar = 0;//读取A0的值，判断大门前是否有车，1为有0为无
+int state[] = {1,0,0};//三个停车位的状态矩阵，1为有车，0为无车
+int compare = 350;//A0A1等端口的输入值将于此值比较，建议为500，但根据光照强度不同该值可能需要改变
 
 /* UART FSM States */
 typedef enum
@@ -16,6 +34,7 @@ typedef enum
   PayBill,
   OpenMainGate2,
   CloseMainGate2,
+  Full,
 } UART_State_t;
 
 /* FSM variables */
@@ -25,10 +44,6 @@ int StartTime = 0;            //计时用
 int StopTime = 0;
 int TotalTime = 0;
 
-unsigned char txData;        // Current data register
-unsigned char txSym = 1;     // Bit to transmit
-unsigned char txStart = 0;   // 1 if UART is sending data, 0 if idle
-
 const byte interruptbuttonPin1 = 48;
 const byte interruptbuttonPin2 = 50;
 
@@ -37,19 +52,31 @@ void setup() {
   Serial.begin(9600);
   pinMode(interruptbuttonPin1, INPUT_PULLUP);
   pinMode(interruptbuttonPin2, INPUT_PULLUP);
+  myservo1.attach(6); //将pin6作为servo1的PWM波输出端口
+  myservo2.attach(7);
+  myservo3.attach(8);
+  myservo4.attach(9);
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
   carDetect();
   carpark_state_machine();
+  servoRotate();
 }
 void carDetect(){
-  newcar = analogRead(A0);
-  newcar = newcar>500? 1:0;//1：大门有车   0：大门无车
-
-  newcar2 = analogRead(A1);
-  newcar2 = newcar2>300? 1:0;//对应的门处有车
+  Gatecar = analogRead(A0);
+  //Serial.print("A0端口的值为");
+  //Serial.println(Gatecar);
+  Gatecar = Gatecar>compare? 1:0;//1：大门有车   0：大门无车
+  int i=0;
+  for(;i<=2;i++){
+  state[i] = analogRead(i+1);
+  //Serial.print(i+1);
+  //Serial.print("端口的值为");
+  //Serial.println(state[i]);//debug
+  state[i] = state[i]>compare? 1:0;//Roomi+1对应的门处有车?
+  }
 }
 
 int Selectspace(){//有车来时为其安排停车位
@@ -60,7 +87,7 @@ int Selectspace(){//有车来时为其安排停车位
       Serial.print("您的停车位是");
       Serial.print(newcarspace);
       Serial.println("号停车位");
-      state[i]=1;//将该停车位标记为已占用
+      //state[i]=1;//将该停车位标记为已占用，但是会被carDetect覆盖掉，没什么好的解决方法，干脆不用,反正我们假设每次只来一辆车
       break;
       }
   else {
@@ -86,6 +113,7 @@ void carpark_state_machine()
   switch(txState)
   {
     case IDLE:
+    delay(1000);
       timelimit1 =0 ;
       timelimit2 =0 ;
       timelimit3 =0 ;
@@ -93,36 +121,39 @@ void carpark_state_machine()
       timelimit5 =0 ;
       timelimit6 =0 ;
       timelimit7 =0 ;//空闲时将所有timelimit置零，为其他程序做准备
-      txState = newcar == 1 ? SelectSpace : IDLE;//判断是否有车到大门处，若有则开始工作。
+      txState = Gatecar == 1 ? SelectSpace : IDLE;//判断是否有车到大门处，若有则开始工作。
       break;
     case SelectSpace:
-      selectedSpace = Selectspace();//安排停车位
-      //txState = selectedSpace == 0 ? Full : OpenMainGate;过会要把full部分补上
-      txState = OpenMainGate;
+      selectedSpace = Selectspace();//安排停车位,其值写入“selectedSpace”。
+      txState = selectedSpace == 0 ? Full : OpenMainGate;
       break;
     case OpenMainGate:
       if (timelimit1 == 0) {
       Serial.println("大门已打开");
+      angle[0] = gateopen;
       Serial.print("您的车位是");
       Serial.print(selectedSpace);
       Serial.println("号车位");
       Serial.println("请跟随LED灯指引");
       timelimit1 = 1;//限制这部分循环的次数为一
       }
-      txState = newcar2 == 1 ? OpenSelectGate : OpenMainGate;
+      txState = Gatecar == 0 ? OpenSelectGate : OpenMainGate;
       break;
     case OpenSelectGate:
       if (timelimit2 == 0) {
       Serial.println("检测到车已进入停车场，大门已关闭");
+      angle[0] = gateclose;
       Serial.println("对应的门已打开");
+      angle[selectedSpace] = gateopen;
       timelimit2 =1;
       }
-      txState = newcar2 == 0 ? CloseSelectGate : OpenSelectGate;
+      txState = state[selectedSpace-1] == 1 ? CloseSelectGate : OpenSelectGate;
       break;
     case CloseSelectGate:
     if (timelimit3 ==0) {
       Serial.println("对应的门已关闭");
-      StartTime = millis();
+      angle[selectedSpace] = gateclose;
+      StartTime = millis()/1000;
       Serial.print("开始计时，起始时间为");
       Serial.println(StartTime);
       timelimit3 =1;
@@ -132,16 +163,18 @@ void carpark_state_machine()
     case OpenSelectGate2:
     if (timelimit4 ==0) {
       Serial.println("检测到车主按下了离开按钮，对应的门已开启");
-      StopTime = millis();
+      angle[selectedSpace] = gateopen;
+      StopTime = millis()/1000;
       Serial.print("停止计时，停止时间为");
       Serial.println(StopTime);
       TotalTime = StopTime-StartTime;
       timelimit4 =1;
     }
-      txState = newcar2 == 1 ? CloseSelectGate2 : OpenSelectGate2;
+      txState = state[selectedSpace-1] == 0 ? CloseSelectGate2 : OpenSelectGate2;
       break;
     case CloseSelectGate2:
       Serial.println("检测到车主已离开停车位，对应的门已关闭");
+      angle[selectedSpace] = gateclose;
         txState = PayBill;
       break;
     case PayBill:
@@ -155,23 +188,36 @@ void carpark_state_machine()
     case OpenMainGate2:
     if (timelimit6 ==0) {
       Serial.println("检测到车主已付费，大门已开启");
+      angle[0] = gateopen;
       timelimit6 =1;
     }  
-        txState = newcar == 1? CloseMainGate2 : OpenMainGate2;
+        txState = Gatecar == 1? CloseMainGate2 : OpenMainGate2;
       break;
     case CloseMainGate2:
     if (timelimit7 ==0) {
-      Serial.println("检测到车主已付费，大门已开启");
+      Serial.println("检测到车主已离开，大门已关闭");
+      angle[0] = gateclose;
       timelimit7 =1;
     }  
-        txState = IDLE;
+        txState = Gatecar == 0 ? IDLE:CloseMainGate2;
       break;    
-    /*case Full:
+   case Full:
     Serial.println("停车位已满");//停车位满时转到这个状态，在有空位之前大门只出不进。
-    
-      break;*/
+    if (state[0]+state[1]+state[2]==3)
+        txState = Full;
+        else 
+        txState = IDLE;
+      break;
     default:
         break;
   }
 }
 
+
+void servoRotate(){
+  myservo1.write(angle[0]); 
+  Serial.println(angle[0]);
+  myservo2.write(angle[1]); 
+  myservo3.write(angle[2]); 
+  myservo4.write(angle[3]); 
+}
