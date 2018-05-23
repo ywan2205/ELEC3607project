@@ -18,8 +18,13 @@ int gateopen = 90;//开门角度
 int gateclose = 0;//关门角度
 
 int Gatecar = 0;//读取A0的值，判断大门前是否有车，1为有0为无
-int state[] = {1,0,0};//三个停车位的状态矩阵，1为有车，0为无车
+int state[] = {0,0,0};//三个停车位的状态矩阵，1为有车，0为无车
 int compare = 300;//A0A1等端口的输入值将于此值比较，建议为500，但根据光照强度不同该值可能需要改变
+
+int GatePin = A0;
+int Room1Pin = A1;
+int Room2Pin = A2;
+int Room3Pin = A3;
 
 /* UART FSM States */
 typedef enum
@@ -59,15 +64,16 @@ void setup() {
     lcd.begin(16, 2);
   // Print a message to the LCD.
   lcd.print("hello, world!");
+  carDetect();//改到这里，仅在最开始运行一次
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
-  carDetect();
-  delay(50);//这个delay很重要
+  delay(50);//这个delay很重要，让analog接口的值有足够时间改变
   carpark_state_machine();
   servoRotate();
   LCDdebug();
+  
 }
 void carDetect(){
   Gatecar = analogRead(A0);
@@ -92,7 +98,7 @@ int Selectspace(){//有车来时为其安排停车位
       Serial.print("您的停车位是");
       Serial.print(newcarspace);
       Serial.println("号停车位");
-      //state[i]=1;//将该停车位标记为已占用，但是会被carDetect覆盖掉，没什么好的解决方法，干脆不用,反正我们假设每次只来一辆车
+      state[i]=1;//将该停车位标记为已占用
       break;
       }
   else {
@@ -100,8 +106,10 @@ int Selectspace(){//有车来时为其安排停车位
     Serial.println("号停车位已被占用");
         }
     }
-    if (newcarspace == 0)
+    if (newcarspace == 0){
     Serial.println("停车位已满");
+  return 0;}
+  else
     return newcarspace;
 }
 
@@ -112,7 +120,7 @@ int Selectspace(){//有车来时为其安排停车位
   int timelimit4 = 0;
   int timelimit5 = 0;
   int timelimit6 = 0;
-  int timelimit7 = 0 ;
+  int timelimit7 = 0;
 void carpark_state_machine()
 {
   switch(txState)
@@ -125,7 +133,7 @@ void carpark_state_machine()
       timelimit5 =0 ;
       timelimit6 =0 ;
       timelimit7 =0 ;//空闲时将所有timelimit置零，为其他程序做准备
-      txState = Gatecar == 1 ? SelectSpace : IDLE;//判断是否有车到大门处，若有则开始工作。
+      txState = analogRead(GatePin) >=compare ? SelectSpace : IDLE;//判断是否有车到大门处，若有则开始工作。
       break;
     case SelectSpace:
       selectedSpace = Selectspace();//安排停车位,其值写入“selectedSpace”。
@@ -141,7 +149,7 @@ void carpark_state_machine()
       Serial.println("请跟随LED灯指引");
       timelimit1 = 1;//限制这部分循环的次数为一
       }
-      txState = Gatecar == 0 ? OpenSelectGate : OpenMainGate;
+      txState = analogRead(GatePin) <=compare ? OpenSelectGate : OpenMainGate;
       break;
     case OpenSelectGate:
       if (timelimit2 == 0) {
@@ -151,7 +159,7 @@ void carpark_state_machine()
       angle[selectedSpace] = gateopen;
       timelimit2 =1;
       }
-      txState = state[selectedSpace-1] == 1 ? CloseSelectGate : OpenSelectGate;
+      txState = analogRead(selectedSpace) >=compare ? CloseSelectGate : OpenSelectGate;
       break;
     case CloseSelectGate:
     if (timelimit3 ==0) {
@@ -174,7 +182,7 @@ void carpark_state_machine()
       TotalTime = StopTime-StartTime;
       timelimit4 =1;
     }
-      txState = state[selectedSpace-1] == 0 ? CloseSelectGate2 : OpenSelectGate2;
+      txState = analogRead(selectedSpace) <=compare ? CloseSelectGate2 : OpenSelectGate2;
       break;
     case CloseSelectGate2:
       Serial.println("检测到车主已离开停车位，对应的门已关闭");
@@ -195,19 +203,20 @@ void carpark_state_machine()
       angle[0] = gateopen;
       timelimit6 =1;
     }  
-        txState = Gatecar == 1? CloseMainGate2 : OpenMainGate2;
+        txState = analogRead(GatePin) >= compare? CloseMainGate2 : OpenMainGate2;
       break;
     case CloseMainGate2:
     if (timelimit7 ==0) {
       Serial.println("检测到车主已离开，大门已关闭");
       angle[0] = gateclose;
       timelimit7 =1;
+    state[selectedSpace-1]=0;//车位已空闲，改变state状态为0
     }  
-        txState = Gatecar == 0 ? IDLE:CloseMainGate2;
+        txState = analogRead(GatePin) <=compare ? IDLE:CloseMainGate2;
       break;    
    case Full:
     Serial.println("停车位已满");//停车位满时转到这个状态，在有空位之前大门只出不进。
-    if (state[0]+state[1]+state[2]==3)
+    if (analogRead(Room1Pin)+analogRead(Room2Pin)+analogRead(Room3Pin)==3)
         txState = Full;
         else 
         txState = IDLE;
