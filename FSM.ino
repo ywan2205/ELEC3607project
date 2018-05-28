@@ -52,6 +52,12 @@ int TotalTime = 0;
 const byte interruptbuttonPin1 = 48;
 const byte interruptbuttonPin2 = 50;
 
+/*for bluetooth*/
+#define blueToothSerial   Serial2     //set serial2(USART1) as blueToothSerial
+const byte numChars = 32;
+char receivedChars[numChars];
+boolean newData = false;
+
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(9600);
@@ -65,6 +71,7 @@ void setup() {
   // Print a message to the LCD.
   lcd.print("hello, world!");
   carDetect();//改到这里，仅在最开始运行一次
+  setupBlueToothConnection();
 }
 
 void loop() {
@@ -73,7 +80,8 @@ void loop() {
   carpark_state_machine();
   servoRotate();
   LCDdebug();
-  
+  BluetoothRecvWithStartEndMarkers();
+  showNewData();
 }
 void carDetect(){
   Gatecar = analogRead(A0);
@@ -250,4 +258,84 @@ void LCDdebug(){
     lcd.setCursor(12, 1);
     lcd.print(analogRead(A3));
   }
+}
+
+void BluetoothRecvWithStartEndMarkers() {
+    static boolean recvInProgress = false;
+    static byte ndx = 0;
+    char startMarker = '<';
+    char endMarker = '>';
+    char rc;
+ 
+ // if (Serial.available() > 0) {
+    while (blueToothSerial.available() > 0 && newData == false) {
+        rc = blueToothSerial.read();
+
+        if (recvInProgress == true) {
+            if (rc != endMarker) {
+                receivedChars[ndx] = rc;
+                ndx++;
+                if (ndx >= numChars) {
+                    ndx = numChars - 1;
+                }
+            }
+            else {
+                receivedChars[ndx] = '\0'; // terminate the string
+                recvInProgress = false;
+                ndx = 0;
+                newData = true;
+            }
+        }
+
+        else if (rc == startMarker) {
+            recvInProgress = true;
+        }
+    }
+
+}
+
+void showNewData() {
+    if (newData == true) {
+        Serial.print("You have sent ");
+        blueToothSerial.print("You have sent ");
+        Serial.println(receivedChars);
+        blueToothSerial.println(receivedChars);
+        if(strcmp(receivedChars, "state") == 0){
+          Serial.println("now there are three space remaining");
+          blueToothSerial.println("now there are three space remaining");
+        }
+        else if (strcmp(receivedChars, "reserve") == 0){
+          Serial.println("Received your order, your booker place is place 4.");
+          blueToothSerial.println("Received your order, your booker place is place 4.");
+        }
+        else if (strcmp(receivedChars, "leave") == 0){
+          Serial.println("Received your order, The door has been opened.");
+          blueToothSerial.println("Received your order, The door has been opened.");
+        }
+         else if (strcmp(receivedChars, "pay") == 0){
+          Serial.println("Your payment has been confirmed, thanks for your using");
+          blueToothSerial.println("Your payment has been confirmed, thanks for your using");
+        }
+          else{
+          Serial.println("unknown order");
+          blueToothSerial.println("unknown order");
+        }
+        newData = false;
+    }
+}
+
+
+void setupBlueToothConnection()
+{
+    blueToothSerial.begin(38400);                           // Set BluetoothBee BaudRate to default baud rate 38400
+    blueToothSerial.print("\r\n+STWMOD=0\r\n");             // set the bluetooth work in slave mode
+    blueToothSerial.print("\r\n+STNA=Test\r\n");    // set the bluetooth name as "SeeedBTSlave"
+    blueToothSerial.print("\r\n+STOAUT=1\r\n");             // Permit Paired device to connect me
+    blueToothSerial.print("\r\n+STAUTO=0\r\n");             // Auto-connection should be forbidden here
+    blueToothSerial.print("\r\n+STPIN=1234\r\n");
+    delay(2000);                                            // This delay is required.
+    blueToothSerial.print("\r\n+INQ=1\r\n");                // make the slave bluetooth inquirable
+    Serial.println("The slave bluetooth is inquirable!");
+    delay(2000);                                            // This delay is required.
+    blueToothSerial.flush();
 }
