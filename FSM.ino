@@ -4,7 +4,7 @@
 
 // initialize the library by associating any needed LCD interface pin
 // with the arduino pin number it is connected to
-const int rs = 12, en = 11, d4 = 5, d5 = 4, d6 = 3, d7 = 2;
+const int rs = 12, en = 11, d4 = 42, d5 = 40, d6 = 38, d7 = 36;
 LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
 
 //for four servos
@@ -19,7 +19,7 @@ int gateclose = 0;//关门角度
 
 int Gatecar = 0;//读取A0的值，判断大门前是否有车，1为有0为无
 int state[] = {0,0,0};//三个停车位的状态矩阵，1为有车，0为无车
-int compare = 300;//A0A1等端口的输入值将于此值比较，建议为500，但根据光照强度不同该值可能需要改变
+int compare = 700;//A0A1等端口的输入值将于此值比较，建议为500，但根据光照强度不同该值可能需要改变
 
 int GatePin = A0;
 int Room1Pin = A1;
@@ -57,10 +57,10 @@ void setup() {
   Serial.begin(9600);
   pinMode(interruptbuttonPin1, INPUT_PULLUP);
   pinMode(interruptbuttonPin2, INPUT_PULLUP);
-  myservo1.attach(6); //将pin6作为servo1的PWM波输出端口
-  myservo2.attach(7);
-  myservo3.attach(8);
-  myservo4.attach(9);
+  myservo1.attach(2); //将pin6作为servo1的PWM波输出端口
+  myservo2.attach(3);
+  myservo3.attach(4);
+  myservo4.attach(5);
     lcd.begin(16, 2);
   // Print a message to the LCD.
   lcd.print("hello, world!");
