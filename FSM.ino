@@ -30,6 +30,10 @@ int Room1Pin = A1;
 int Room2Pin = A2;
 int Room3Pin = A3;
 
+int LED1 = 22;
+int LED2 = 24;
+int LED3 = 26;
+
 int where = 0;  //检测程序在哪一状态
 /* UART FSM States */
 typedef enum
@@ -80,6 +84,12 @@ void setup() {
   pinMode(interruptbuttonPin2, INPUT_PULLUP);
   pinMode(interruptbuttonPin3, INPUT_PULLUP);
   pinMode(interruptbuttonPin0, INPUT_PULLUP);
+  pinMode(LED1,OUTPUT);
+  pinMode(LED2,OUTPUT);
+  pinMode(LED3,OUTPUT);
+  digitalWrite(LED1,HIGH);
+  digitalWrite(LED2,HIGH);
+  digitalWrite(LED3,HIGH);
   
   myservo1.attach(2); //将pin6作为servo1的PWM波输出端口
   myservo2.attach(3);
@@ -190,6 +200,22 @@ void carpark_state_machine()
       where = 1;//indicate it's working in car-going-in circle
       if (timelimit1 == 0) {
       Serial.println("大门已打开");
+      switch (newcarspace) {
+    case 1:
+            digitalWrite(LED1,LOW);
+      break;
+    case 2:
+            digitalWrite(LED2,LOW);
+      break;
+          case 3:
+            digitalWrite(LED3,LOW);
+      break;
+    default:
+      // if nothing else matches, do the default
+      // default is optional
+      break;
+  }
+      
       angle[0] = gateopen;
       Serial.print("OpenMainGate您的车位是");
       Serial.print(newcarspace);
@@ -213,10 +239,27 @@ void carpark_state_machine()
       timelimit2 =1;
       }
       txState = analogRead(newcarspace) >=compare ? CloseSelectGate : OpenSelectGate;
+      delay(1000);
       break;
     case CloseSelectGate:
     if (timelimit3 ==0) {
       Serial.println("对应的门已关闭");
+      switch (newcarspace) {
+    case 1:
+            digitalWrite(LED1,HIGH);
+      break;
+    case 2:
+            digitalWrite(LED2,HIGH);
+      break;
+          case 3:
+            digitalWrite(LED3,HIGH);
+      break;
+    default:
+      // if nothing else matches, do the default
+      // default is optional
+      break;
+  }
+
       angle[newcarspace] = gateclose;
       /*if(newcarspace == 3){
   for (int pos = 90; pos >= 0; pos -= 1) { // goes from 180 degrees to 0 degrees
@@ -385,16 +428,16 @@ void LCDdebug(){
     previousMillis = currentMillis;
     lcd.clear();
     lcd.setCursor(0, 1);
-    lcd.print(analogRead(A1));
+    lcd.print(state[0]);
     //lcd.print(angle[0]);
     lcd.setCursor(4, 1);
-    lcd.print(analogRead(A1));
+    lcd.print(state[1]);
     //lcd.print(angle[1]);
     lcd.setCursor(8, 1);
-    lcd.print(analogRead(A2));
+    lcd.print(state[2]);
     //lcd.print(angle[2]);
     lcd.setCursor(12, 1);
-    lcd.print(analogRead(A3));
+    lcd.print(newcarspace);
     //lcd.print(angle[3]);
   }
 }
