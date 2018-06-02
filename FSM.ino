@@ -13,14 +13,17 @@ Servo myservo2;
 Servo myservo3;
 Servo myservo4;
 
-int angle[]={0,0,0,0}; //舵机旋转角度
-int gateopen = 90;//开门角度
-int gateclose = 0;//关门角度
+int gateopen = 0;//开门角度
+int gateclose = 90;//关门角度
+int angle[]={gateclose,gateclose,gateclose,gateclose}; //舵机旋转角度
 
 int Gatecar = 0;//读取A0的值，判断大门前是否有车，1为有0为无
 int state[] = {0,0,0};//三个停车位的状态矩阵，1为有车，0为无车
 int compare = 700;//A0A1等端口的输入值将于此值比较，建议为500，但根据光照强度不同该值可能需要改变
 int leavecar = 0;//在Closegate123中被赋值，用于指示那辆车正在离开
+int bookedspace;//用于储存蓝牙预定的是哪一个车位
+int bluetoothPayment =0;//用于确认是否通过蓝牙支付
+int bluetoothArrive = 1;//用于防止按下arrive时大门立刻关闭
 
 int GatePin = A0;
 int Room1Pin = A1;
@@ -194,7 +197,12 @@ void carpark_state_machine()
       Serial.println("请跟随LED灯指引");
       timelimit1 = 1;//限制这部分循环的次数为一
       }
-      txState = analogRead(GatePin) <=compare ? OpenSelectGate : OpenMainGate;
+      if(analogRead(GatePin) <=compare && bluetoothArrive == 1){
+      txState=OpenSelectGate;
+      }
+      else{
+      txState=OpenMainGate;
+      }
       break;
     case OpenSelectGate:
       if (timelimit2 == 0) {
@@ -320,19 +328,22 @@ void carpark_state_machine()
       break;*/
     case PayBill:
     if (timelimit5 ==0) {
-    myservo1.write(0); 
-    myservo2.write(0); 
-    myservo3.write(0); 
-    myservo4.write(0);
     Serial.print("请付费,停车总时长为");
     Serial.println(TotalTime);
       timelimit5 =1;
     }
-        txState = digitalRead(interruptbuttonPin0) == 1 ? OpenMainGate2:PayBill;
+        if (digitalRead(interruptbuttonPin0) == 1||bluetoothPayment ==1){
+          txState = OpenMainGate2;
+          Serial.println("检测到车主已付费");
+          bluetoothPayment = 0;
+        }
+        else{
+          txState = PayBill;
+        }       
         break;
     case OpenMainGate2:
     if (timelimit6 ==0) {
-      Serial.println("检测到车主已付费，大门已开启");
+      Serial.println("大门已开启");
       angle[0] = gateopen;
       timelimit6 =1;
     }  
@@ -374,17 +385,17 @@ void LCDdebug(){
     previousMillis = currentMillis;
     lcd.clear();
     lcd.setCursor(0, 1);
-    //lcd.print(analogRead(A1));
-    lcd.print(angle[0]);
+    lcd.print(analogRead(A1));
+    //lcd.print(angle[0]);
     lcd.setCursor(4, 1);
-    //lcd.print(analogRead(A1));
-    lcd.print(angle[1]);
+    lcd.print(analogRead(A1));
+    //lcd.print(angle[1]);
     lcd.setCursor(8, 1);
-    //lcd.print(analogRead(A2));
-    lcd.print(angle[2]);
+    lcd.print(analogRead(A2));
+    //lcd.print(angle[2]);
     lcd.setCursor(12, 1);
-    //lcd.print(analogRead(A3));
-    lcd.print(angle[3]);
+    lcd.print(analogRead(A3));
+    //lcd.print(angle[3]);
   }
 }
 
@@ -439,18 +450,60 @@ void showNewData() {
         Serial.println(receivedChars);
         blueToothSerial.println(receivedChars);
         if(strcmp(receivedChars, "state") == 0){
-          Serial.println("now there are three space remaining");
-          blueToothSerial.println("now there are three space remaining");
+          int remainingSpace = 0;
+          remainingSpace = 3- (state[0]+state[1]+state[2]);
+          Serial.print("now there are ");
+          Serial.print(remainingSpace);
+          Serial.println(" space remaining");
+          blueToothSerial.print("now there are");
+          blueToothSerial.print(remainingSpace);
+          blueToothSerial.println("space remaining");
         }
         else if (strcmp(receivedChars, "reserve") == 0){
-          Serial.println("Received your order, your booker place is place 4.");
-          blueToothSerial.println("Received your order, your booker place is place 4.");
+          Selectspace();
+          bookedspace = newcarspace;
+          bluetoothArrive = 0;
+          Serial.print("Received your order, your booked place is place ");
+          Serial.print(bookedspace);
+          Serial.println(".");
+          blueToothSerial.print("Received your order, your booked place is place ");
+          blueToothSerial.print(bookedspace);
+          blueToothSerial.println(".");
+        }
+        else if (strcmp(receivedChars, "arrive") == 0){
+          txState = OpenMainGate;
+          newcarspace = bookedspace;
+          bluetoothArrive = 1;
+          Serial.print("Welcome, please go to space ");
+          Serial.print(bookedspace);
+          Serial.println(".");
+          blueToothSerial.print("Welcome, please go to space ");
+          blueToothSerial.print(bookedspace);
+          blueToothSerial.println(".");
         }
         else if (strcmp(receivedChars, "leave") == 0){
+          switch (bookedspace) {
+  case 1:
+    // statements
+    txState = OpenGate1;
+    break;
+  case 2:
+    // statements
+    txState = OpenGate2;
+    break;
+  case 3:
+    // statements
+    txState = OpenGate3;
+    break;
+  default:
+    // statements
+    break;
+}
           Serial.println("Received your order, The door has been opened.");
           blueToothSerial.println("Received your order, The door has been opened.");
         }
          else if (strcmp(receivedChars, "pay") == 0){
+          bluetoothPayment =1;
           Serial.println("Your payment has been confirmed, thanks for your using");
           blueToothSerial.println("Your payment has been confirmed, thanks for your using");
         }
