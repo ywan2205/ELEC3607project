@@ -20,12 +20,14 @@ int gateclose = 0;//关门角度
 int Gatecar = 0;//读取A0的值，判断大门前是否有车，1为有0为无
 int state[] = {0,0,0};//三个停车位的状态矩阵，1为有车，0为无车
 int compare = 700;//A0A1等端口的输入值将于此值比较，建议为500，但根据光照强度不同该值可能需要改变
+int leavecar = 0;//在Closegate123中被赋值，用于指示那辆车正在离开
 
 int GatePin = A0;
 int Room1Pin = A1;
 int Room2Pin = A2;
 int Room3Pin = A3;
 
+int where = 0;  //检测程序在哪一状态
 /* UART FSM States */
 typedef enum
 {
@@ -34,8 +36,12 @@ typedef enum
   OpenMainGate,
   OpenSelectGate,
   CloseSelectGate,
-  OpenSelectGate2,
-  CloseSelectGate2,
+  OpenGate1,
+  CloseGate1,
+  OpenGate2,
+  CloseGate2,
+  OpenGate3,
+  CloseGate3,
   PayBill,
   OpenMainGate2,
   CloseMainGate2,
@@ -44,39 +50,60 @@ typedef enum
 
 /* FSM variables */
 UART_State_t txState = IDLE; // State register
-int selectedSpace = 0;       // 选择的停车位
-int StartTime = 0;            //计时用
-int StopTime = 0;
+int StartTime[] = {0,0,0,0};            //计时用
+int StopTime[] = {0,0,0,0};
 int TotalTime = 0;
 
-const byte interruptbuttonPin1 = 48;
-const byte interruptbuttonPin2 = 50;
+const byte interruptbuttonPin0 = 48;
+const byte interruptbuttonPin1 = 50;
+const byte interruptbuttonPin2 = 52;
+const byte interruptbuttonPin3 =46;
+
+
 
 /*for bluetooth*/
 #define blueToothSerial   Serial2     //set serial2(USART1) as blueToothSerial
 const byte numChars = 32;
 char receivedChars[numChars];
 boolean newData = false;
+#define p (1<<21)
 
 void setup() {
   // put your setup code here, to run once:
+  
+  
   Serial.begin(9600);
   pinMode(interruptbuttonPin1, INPUT_PULLUP);
   pinMode(interruptbuttonPin2, INPUT_PULLUP);
+  pinMode(interruptbuttonPin3, INPUT_PULLUP);
+  pinMode(interruptbuttonPin0, INPUT_PULLUP);
+  
   myservo1.attach(2); //将pin6作为servo1的PWM波输出端口
   myservo2.attach(3);
   myservo3.attach(4);
-  myservo4.attach(5);
+  myservo4.attach(9);
     lcd.begin(16, 2);
   // Print a message to the LCD.
   lcd.print("hello, world!");
   carDetect();//改到这里，仅在最开始运行一次
   setupBlueToothConnection();
+
+  //attachInterrupt(interruptbuttonPin1, button1, RISING);
+  //attachInterrupt(interruptbuttonPin2, button2, RISING);
+  //attachInterrupt(interruptbuttonPin3, button3, RISING);
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
   delay(50);//这个delay很重要，让analog接口的值有足够时间改变
+  if(where==0||where==2){ 
+  if(digitalRead(interruptbuttonPin1)==1)
+    txState = OpenGate1;
+  if(digitalRead(interruptbuttonPin2)==1)
+    txState = OpenGate2;
+  if(digitalRead(interruptbuttonPin3)==1)
+    txState = OpenGate3;
+  }
   carpark_state_machine();
   servoRotate();
   LCDdebug();
@@ -98,14 +125,16 @@ void carDetect(){
   }
 }
 
-int Selectspace(){//有车来时为其安排停车位
-  int newcarspace = 0;
+int newcarspace = 0;
+
+void Selectspace(){//有车来时为其安排停车位
+  newcarspace = 0;
   for(int i=0;i<=2;i++){//安排停车位
     if (state[i]==0){
       newcarspace = i+1;//安排到1，2，3号停车位中的一个
-      Serial.print("您的停车位是");
+      Serial.print("Selectspace您的停车位是");
       Serial.print(newcarspace);
-      Serial.println("号停车位");
+      Serial.println("号停车位hh");
       state[i]=1;//将该停车位标记为已占用
       break;
       }
@@ -116,9 +145,7 @@ int Selectspace(){//有车来时为其安排停车位
     }
     if (newcarspace == 0){
     Serial.println("停车位已满");
-  return 0;}
-  else
-    return newcarspace;
+    }
 }
 
 
@@ -134,6 +161,8 @@ void carpark_state_machine()
   switch(txState)
   {
     case IDLE:
+    if(where==0)
+    //Serial.print("正常进入IDLE");//debug
       timelimit1 =0 ;
       timelimit2 =0 ;
       timelimit3 =0 ;
@@ -144,15 +173,23 @@ void carpark_state_machine()
       txState = analogRead(GatePin) >=compare ? SelectSpace : IDLE;//判断是否有车到大门处，若有则开始工作。
       break;
     case SelectSpace:
-      selectedSpace = Selectspace();//安排停车位,其值写入“selectedSpace”。
-      txState = selectedSpace == 0 ? Full : OpenMainGate;
+      Selectspace();//安排停车位,其值写入“newcarspace”。
+      /*txState = newcarspace == 0 ? Full : OpenMainGate;*/
+      if(newcarspace ==0){
+        Serial.println("我在SelectSpace状态里，newcarspace是零，我现在要去Full状态");
+      txState=Full;
+      }
+      else{
+      txState=OpenMainGate;
+      }
       break;
     case OpenMainGate:
+      where = 1;//indicate it's working in car-going-in circle
       if (timelimit1 == 0) {
       Serial.println("大门已打开");
       angle[0] = gateopen;
-      Serial.print("您的车位是");
-      Serial.print(selectedSpace);
+      Serial.print("OpenMainGate您的车位是");
+      Serial.print(newcarspace);
       Serial.println("号车位");
       Serial.println("请跟随LED灯指引");
       timelimit1 = 1;//限制这部分循环的次数为一
@@ -164,46 +201,134 @@ void carpark_state_machine()
       Serial.println("检测到车已进入停车场，大门已关闭");
       angle[0] = gateclose;
       Serial.println("对应的门已打开");
-      angle[selectedSpace] = gateopen;
+      angle[newcarspace] = gateopen;
       timelimit2 =1;
       }
-      txState = analogRead(selectedSpace) >=compare ? CloseSelectGate : OpenSelectGate;
+      txState = analogRead(newcarspace) >=compare ? CloseSelectGate : OpenSelectGate;
       break;
     case CloseSelectGate:
     if (timelimit3 ==0) {
       Serial.println("对应的门已关闭");
-      angle[selectedSpace] = gateclose;
-      StartTime = millis()/1000;
+      angle[newcarspace] = gateclose;
+      /*if(newcarspace == 3){
+  for (int pos = 90; pos >= 0; pos -= 1) { // goes from 180 degrees to 0 degrees
+    myservo4.write(pos);              // tell servo to go to position in variable 'pos'
+        Serial.println("我在反向跳舞");
+    delay(15);                       // waits 15ms for the servo to reach the position
+  }
+      }*/
+      StartTime[newcarspace] = millis()/1000;
       Serial.print("开始计时，起始时间为");
-      Serial.println(StartTime);
+      Serial.println(StartTime[newcarspace]);
       timelimit3 =1;
       }
-      txState = digitalRead(interruptbuttonPin1) == 1 ? OpenSelectGate2 : CloseSelectGate;
+      txState = IDLE;
+      where = 0;
       break;
-    case OpenSelectGate2:
+
+    case OpenGate1:
+    if (timelimit4 ==0) {
+      Serial.println("检测到1号停车位车主按下了离开按钮，1号门已开启，其他车主请等待");
+      angle[1] = gateopen;
+      StopTime[1] = millis()/1000;
+      Serial.print("停止计时，停止时间为");
+      Serial.println(StopTime[1]);
+      TotalTime = StopTime[1]-StartTime[1];
+      timelimit4 =1;
+    }
+      if (analogRead(1)<compare)
+      txState = CloseGate1;
+      else
+      txState = OpenGate1;
+      break;
+    case CloseGate1:
+      Serial.println("检测到1号车主已离开停车位，对应的门已关闭");
+      leavecar = 1;
+      angle[1] = gateclose;
+      if (analogRead(1)<compare)
+        txState = PayBill;
+      else 
+        txState = CloseGate1;
+      break;
+
+     case OpenGate2:
+    if (timelimit4 ==0) {
+      Serial.println("检测到2号停车位车主按下了离开按钮，2号门已开启，其他车主请等待");
+      angle[2] = gateopen;
+      StopTime[2] = millis()/1000;
+      Serial.print("停止计时，停止时间为");
+      Serial.println(StopTime[2]);
+      TotalTime = StopTime[2]-StartTime[2];
+      timelimit4 =1;
+    }
+      if (analogRead(2)<compare)
+      txState = CloseGate2;
+      else
+      txState = OpenGate2;
+      break;
+    case CloseGate2:
+      Serial.println("检测到2号车主已离开停车位，对应的门已关闭");
+      leavecar = 2;
+      angle[2] = gateclose;
+      if (analogRead(2)<compare)
+        txState = PayBill;
+      else 
+        txState = CloseGate2;
+      break;
+
+    case OpenGate3:
+    if (timelimit4 ==0) {
+      Serial.println("检测到3号停车位车主按下了离开按钮，3号门已开启，其他车主请等待");
+      angle[3] = gateopen;
+      StopTime[3] = millis()/1000;
+      Serial.print("停止计时，停止时间为");
+      Serial.println(StopTime[3]);
+      TotalTime = StopTime[3]-StartTime[3];
+      timelimit4 =1;
+    }
+      if (analogRead(3)<compare)
+      txState = CloseGate3;
+      else
+      txState = OpenGate3;
+      break;
+    case CloseGate3:
+      Serial.println("检测到3号车主已离开停车位，对应的门已关闭");
+      leavecar = 3;
+      angle[3] = gateclose;
+      if (analogRead(3)<compare)
+        txState = PayBill;
+      else 
+        txState = CloseGate3;
+      break;
+      
+    /*case OpenSelectGate2:
     if (timelimit4 ==0) {
       Serial.println("检测到车主按下了离开按钮，对应的门已开启");
-      angle[selectedSpace] = gateopen;
+      angle[newcarspace] = gateopen;
       StopTime = millis()/1000;
       Serial.print("停止计时，停止时间为");
       Serial.println(StopTime);
       TotalTime = StopTime-StartTime;
       timelimit4 =1;
     }
-      txState = analogRead(selectedSpace) <=compare ? CloseSelectGate2 : OpenSelectGate2;
+      txState = analogRead(newcarspace) <=compare ? CloseSelectGate2 : OpenSelectGate2;
       break;
     case CloseSelectGate2:
       Serial.println("检测到车主已离开停车位，对应的门已关闭");
-      angle[selectedSpace] = gateclose;
+      angle[newcarspace] = gateclose;
         txState = PayBill;
-      break;
+      break;*/
     case PayBill:
     if (timelimit5 ==0) {
+    myservo1.write(0); 
+    myservo2.write(0); 
+    myservo3.write(0); 
+    myservo4.write(0);
     Serial.print("请付费,停车总时长为");
     Serial.println(TotalTime);
       timelimit5 =1;
     }
-        txState = digitalRead(interruptbuttonPin2) == 1 ? OpenMainGate2:PayBill;
+        txState = digitalRead(interruptbuttonPin0) == 1 ? OpenMainGate2:PayBill;
         break;
     case OpenMainGate2:
     if (timelimit6 ==0) {
@@ -218,16 +343,15 @@ void carpark_state_machine()
       Serial.println("检测到车主已离开，大门已关闭");
       angle[0] = gateclose;
       timelimit7 =1;
-    state[selectedSpace-1]=0;//车位已空闲，改变state状态为0
+    state[leavecar-1]=0;//车位已空闲，改变state状态为0
     }  
         txState = analogRead(GatePin) <=compare ? IDLE:CloseMainGate2;
+        where = 0;
       break;    
    case Full:
-    Serial.println("停车位已满");//停车位满时转到这个状态，在有空位之前大门只出不进。
-    if (analogRead(Room1Pin)+analogRead(Room2Pin)+analogRead(Room3Pin)==3)
+        where = 2;
+    Serial.println("停车位已满,请等待车主离开");//停车位满时转到这个状态，在有空位之前大门只出不进。
         txState = Full;
-        else 
-        txState = IDLE;
       break;
     default:
         break;
@@ -250,15 +374,29 @@ void LCDdebug(){
     previousMillis = currentMillis;
     lcd.clear();
     lcd.setCursor(0, 1);
-    lcd.print(analogRead(A0));//use space to overwrite the previous words
+    //lcd.print(analogRead(A1));
+    lcd.print(angle[0]);
     lcd.setCursor(4, 1);
-    lcd.print(analogRead(A1));
+    //lcd.print(analogRead(A1));
+    lcd.print(angle[1]);
     lcd.setCursor(8, 1);
-    lcd.print(analogRead(A2));
+    //lcd.print(analogRead(A2));
+    lcd.print(angle[2]);
     lcd.setCursor(12, 1);
-    lcd.print(analogRead(A3));
+    //lcd.print(analogRead(A3));
+    lcd.print(angle[3]);
   }
 }
+
+/*void button1(){
+  txState = OpenGate1;
+}
+void button2(){
+  txState = OpenGate2;
+}
+void button3(){
+  txState = OpenGate3;
+}*/
 
 void BluetoothRecvWithStartEndMarkers() {
     static boolean recvInProgress = false;
